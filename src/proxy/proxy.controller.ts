@@ -13,6 +13,7 @@ import { BedrockService } from './services/bedrock.service';
 import { PromptRequestDto } from './dto/prompt-request.dto';
 import { PromptResponse, PromptResponseDto } from './dto/prompt-response.dto';
 import { ProvidersResponseDto } from './dto/providers-response.dto';
+import { IncidentReportFeedbackDto } from './dto/incident-report-feedback.dto';
 import { BedrockInvocationException } from './exceptions/bedrock.exceptions';
 import { randomUUID } from 'crypto';
 import { HealthCheckResponseDto, DetailedHealthCheckResponseDto } from './dto/health-response.dto';
@@ -37,7 +38,8 @@ export class ProxyController {
         'GET /api/proxy/providers': 'Get all LLM providers and available models',
         'GET /api/proxy/health': 'Health check with endpoint list',
         'POST /api/proxy/health': 'Simple health check',
-        'POST /api/proxy/prompt': 'Send prompt to Bedrock AI'
+        'POST /api/proxy/prompt': 'Send prompt to Bedrock AI',
+        'POST /api/proxy/incident-report-feedback': 'Analyze incident reports with expert safety feedback'
       },
       usage: {
         prompt: {
@@ -147,6 +149,75 @@ export class ProxyController {
     }
   }
 
+  @Post('incident-report-feedback')
+  @HttpCode(200)
+  @ApiOperation({ 
+    summary: 'Analyze incident reports with expert safety feedback', 
+    description: 'Accepts workplace incident reports and provides expert safety analysis using predefined system prompts combined with AI processing' 
+  })
+  @ApiBody({ 
+    type: IncidentReportFeedbackDto, 
+    description: 'Incident report details for expert analysis' 
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Incident report analyzed successfully', 
+    type: PromptResponseDto 
+  })
+  @ApiResponse({ status: 400, description: 'Invalid incident report data' })
+  @ApiResponse({ status: 500, description: 'Internal server error during analysis' })
+  async processIncidentReportFeedback(@Body() body: IncidentReportFeedbackDto): Promise<PromptResponseDto> {
+    const requestId = randomUUID();
+    
+    try {
+      this.logger.log(`🚨 [${requestId}] Processing incident report feedback request`);
+      this.logger.debug(`📝 [${requestId}] Incident report length: ${body.incidentReport.length} characters`);
+      
+      if (body.modelId) {
+        this.logger.debug(`🤖 [${requestId}] Using specified model: ${body.modelId}`);
+      }
+
+      const response: PromptResponse = await this.bedrockService.processIncidentReportFeedback(
+        body.incidentReport,
+        body.modelId
+      );
+
+      this.logger.log(`✅ [${requestId}] Incident report analysis completed successfully`);
+      this.logger.debug(`📊 [${requestId}] Response length: ${response.response.length} characters`);
+
+      return {
+        response: response.response,
+        modelId: response.modelId,
+        usage: response.usage,
+      };
+    } catch (error) {
+      this.logger.error(`❌ [${requestId}] Failed to process incident report: ${error.message}`, error.stack);
+      
+      if (error instanceof BedrockInvocationException) {
+        throw new HttpException(
+          {
+            status: HttpStatus.BAD_GATEWAY,
+            error: 'Bedrock Service Error',
+            message: error.message,
+            details: error.meta,
+            requestId,
+          },
+          HttpStatus.BAD_GATEWAY,
+        );
+      }
+
+      throw new HttpException(
+        {
+          status: HttpStatus.INTERNAL_SERVER_ERROR,
+          error: 'Internal Server Error',
+          message: 'Failed to process incident report feedback',
+          requestId,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   @Get('health')
   @ApiOperation({ summary: 'Health check with endpoints', description: 'Returns service status and available endpoints' })
   @ApiResponse({ status: 200, description: 'Service is healthy', type: DetailedHealthCheckResponseDto })
@@ -158,7 +229,8 @@ export class ProxyController {
         'GET /api/proxy/health - This endpoint',
         'GET /api/proxy/providers - Get all LLM providers and models',
         'POST /api/proxy/health - Health check',
-        'POST /api/proxy/prompt - Send prompt to Bedrock'
+        'POST /api/proxy/prompt - Send prompt to Bedrock',
+        'POST /api/proxy/incident-report-feedback - Analyze incident reports with expert safety feedback'
       ]
     };
   }

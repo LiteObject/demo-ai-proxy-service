@@ -6,8 +6,10 @@ import {
 } from '@aws-sdk/client-bedrock-runtime';
 import { PromptRequestDto } from '../dto/prompt-request.dto';
 import { PromptResponse } from '../dto/prompt-response.dto';
-import { ProviderInfo, ModelInfo } from '../dto/providers-response.dto';
-import { BedrockInvocationException, BedrockConfigurationException } from '../exceptions/bedrock.exceptions';
+import { ProviderInfo } from '../dto/providers-response.dto';
+import { BedrockInvocationException } from '../exceptions/bedrock.exceptions';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class BedrockService {
@@ -418,6 +420,61 @@ export class BedrockService {
 
     this.logger.log(`Retrieved ${providers.length} providers with ${providers.reduce((total, provider) => total + provider.models.length, 0)} total models`);
     return providers;
+  }
+
+  /**
+   * Process incident report with system prompt for expert safety analysis
+   */
+  async processIncidentReportFeedback(incidentReport: string, modelId?: string): Promise<PromptResponse> {
+    const startTime = Date.now();
+    const selectedModelId = modelId || this.defaultModelId;
+
+    try {
+      this.logger.log('📄 Processing incident report feedback request');
+      
+      // Read system prompt from configuration file
+      const systemPromptPath = path.join(process.cwd(), 'config', 'incident-report-system-prompt.md');
+      const systemPrompt = fs.readFileSync(systemPromptPath, 'utf-8');
+      
+      this.logger.debug(`📋 System prompt loaded from: ${systemPromptPath}`);
+      this.logger.debug(`📝 Incident report length: ${incidentReport.length} characters`);
+
+      // Combine system prompt with user incident report
+      const combinedPrompt = `${systemPrompt}\n\n## Incident Report to Analyze:\n\n${incidentReport}`;
+
+      // Create a prompt request with the combined content
+      const promptRequest: PromptRequestDto = {
+        prompt: combinedPrompt,
+        modelId: selectedModelId,
+        maxTokens: this.defaultMaxTokens,
+        temperature: this.defaultTemperature
+      };
+
+      this.logger.log(`🔍 Invoking expert analysis with model: ${selectedModelId}`);
+      
+      // Use the existing invokeModel method
+      const response = await this.invokeModel(promptRequest);
+      
+      const duration = Date.now() - startTime;
+      this.logger.log(`✅ Incident report analysis completed in ${duration}ms`);
+      
+      return response;
+      
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+      this.logger.error(`❌ Error processing incident report feedback after ${duration}ms: ${error.message}`, error.stack);
+      
+      throw new BedrockInvocationException(
+        selectedModelId,
+        `Failed to process incident report feedback: ${error.message}`,
+        { 
+          duration, 
+          errorType: error.name,
+          statusCode: error.$metadata?.httpStatusCode || 500,
+          requestId: error.$metadata?.requestId 
+        }
+      );
+    }
   }
 
   /**
