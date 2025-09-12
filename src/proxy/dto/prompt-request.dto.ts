@@ -1,5 +1,6 @@
-import { IsString, IsNotEmpty, IsOptional, MaxLength, IsNumber, Min, Max } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, MaxLength, IsNumber, Min, Max, IsInt } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class PromptRequestDto {
   @ApiProperty({ 
@@ -29,7 +30,8 @@ export class PromptRequestDto {
     required: false
   })
   @IsOptional()
-  @IsNumber()
+  @Type(() => Number)
+  @IsInt()
   @Min(1)
   @Max(4096)
   maxTokens?: number;
@@ -42,6 +44,7 @@ export class PromptRequestDto {
     required: false
   })
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   @Max(1)

@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { CustomLoggerService } from './common/logger.service';
 import { LoggingInterceptor } from './common/logging.interceptor';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -14,16 +15,20 @@ async function bootstrap() {
   const logger = app.get(CustomLoggerService);
   app.useLogger(logger);
 
+  // Security middleware
+  app.use(helmet());
+
   // Enable global logging interceptor
   app.useGlobalInterceptors(new LoggingInterceptor());
 
   // Enable CORS for cross-origin requests
   app.enableCors();
 
-  // Enable global validation pipes
+  // Enable global validation pipes with transformation
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
+      transformOptions: { enableImplicitConversion: true },
       whitelist: true,
       forbidNonWhitelisted: true,
     }),

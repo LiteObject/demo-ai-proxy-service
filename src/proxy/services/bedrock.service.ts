@@ -7,6 +7,7 @@ import {
 import { PromptRequestDto } from '../dto/prompt-request.dto';
 import { PromptResponse } from '../dto/prompt-response.dto';
 import { ProviderInfo, ModelInfo } from '../dto/providers-response.dto';
+import { BedrockInvocationException, BedrockConfigurationException } from '../exceptions/bedrock.exceptions';
 
 @Injectable()
 export class BedrockService {
@@ -81,10 +82,20 @@ export class BedrockService {
       this.logger.debug(`📊 Response parsed - Length: ${parsedResponse.response.length} characters`);
       
       return parsedResponse;
-    } catch (error) {
+    } catch (error: any) {
       const duration = Date.now() - startTime;
       this.logger.error(`❌ Error invoking model ${modelId} after ${duration}ms: ${error.message}`, error.stack);
-      throw new Error(`Failed to invoke model: ${error.message}`);
+      
+      throw new BedrockInvocationException(
+        modelId,
+        error.message,
+        { 
+          duration, 
+          errorType: error.name,
+          statusCode: error.$metadata?.httpStatusCode || 500,
+          requestId: error.$metadata?.requestId 
+        }
+      );
     }
   }
 

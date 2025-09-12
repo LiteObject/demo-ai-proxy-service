@@ -15,7 +15,7 @@ A proxy service built with NestJS and TypeScript that forwards user prompts to A
 - **Health Checks** - Built-in health monitoring endpoints
 - **Testing Ready** - Jest setup for unit and e2e tests
 
-## Architecture
+## Repository Structure
 
 ```
 src/

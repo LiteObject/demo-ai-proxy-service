@@ -6,12 +6,16 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  HttpCode,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { BedrockService } from './services/bedrock.service';
 import { PromptRequestDto } from './dto/prompt-request.dto';
 import { PromptResponse, PromptResponseDto } from './dto/prompt-response.dto';
 import { ProvidersResponseDto } from './dto/providers-response.dto';
+import { BedrockInvocationException } from './exceptions/bedrock.exceptions';
+import { randomUUID } from 'crypto';
+import { HealthCheckResponseDto, DetailedHealthCheckResponseDto } from './dto/health-response.dto';
 
 @ApiTags('proxy')
 @Controller('proxy')
@@ -97,7 +101,7 @@ export class ProxyController {
   @ApiResponse({ status: 500, description: 'Internal server error' })
   async sendPrompt(@Body() request: PromptRequestDto): Promise<PromptResponse> {
     const startTime = Date.now();
-    const requestId = Math.random().toString(36).substring(7);
+    const requestId = randomUUID();
     
     try {
       this.logger.log(`🚀 [${requestId}] Processing prompt request - Model: ${request.modelId || 'default'}`);
@@ -115,12 +119,27 @@ export class ProxyController {
       return response;
     } catch (error) {
       const duration = Date.now() - startTime;
+      
+      if (error instanceof BedrockInvocationException) {
+        this.logger.error(`❌ [${requestId}] Bedrock invocation failed after ${duration}ms: ${error.message}`, error.stack);
+        throw new HttpException(
+          {
+            status: HttpStatus.BAD_GATEWAY,
+            error: 'Bedrock service unavailable',
+            message: 'The AI service is currently unavailable. Please try again later.',
+            requestId,
+            meta: error.meta,
+          },
+          HttpStatus.BAD_GATEWAY,
+        );
+      }
+      
       this.logger.error(`❌ [${requestId}] Failed to process prompt request after ${duration}ms: ${error.message}`, error.stack);
       throw new HttpException(
         {
           status: HttpStatus.INTERNAL_SERVER_ERROR,
           error: 'Failed to process prompt',
-          message: error.message,
+          message: 'An unexpected error occurred while processing your request.',
           requestId,
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -130,8 +149,8 @@ export class ProxyController {
 
   @Get('health')
   @ApiOperation({ summary: 'Health check with endpoints', description: 'Returns service status and available endpoints' })
-  @ApiResponse({ status: 200, description: 'Service is healthy' })
-  async healthCheckGet(): Promise<{ status: string; timestamp: string; endpoints: string[] }> {
+  @ApiResponse({ status: 200, description: 'Service is healthy', type: DetailedHealthCheckResponseDto })
+  async healthCheckGet(): Promise<DetailedHealthCheckResponseDto> {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -145,9 +164,10 @@ export class ProxyController {
   }
 
   @Post('health')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Simple health check', description: 'Returns basic service status' })
-  @ApiResponse({ status: 201, description: 'Service is healthy' })
-  async healthCheck(): Promise<{ status: string; timestamp: string }> {
+  @ApiResponse({ status: 200, description: 'Service is healthy', type: HealthCheckResponseDto })
+  async healthCheck(): Promise<HealthCheckResponseDto> {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
