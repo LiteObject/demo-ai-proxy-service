@@ -11,6 +11,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { BedrockService } from './services/bedrock.service';
 import { PromptRequestDto } from './dto/prompt-request.dto';
 import { PromptResponse, PromptResponseDto } from './dto/prompt-response.dto';
+import { ProvidersResponseDto } from './dto/providers-response.dto';
 
 @ApiTags('proxy')
 @Controller('proxy')
@@ -29,6 +30,7 @@ export class ProxyController {
       description: 'Proxy service for AWS Bedrock AI models',
       endpoints: {
         'GET /api/proxy': 'This API documentation',
+        'GET /api/proxy/providers': 'Get all LLM providers and available models',
         'GET /api/proxy/health': 'Health check with endpoint list',
         'POST /api/proxy/health': 'Simple health check',
         'POST /api/proxy/prompt': 'Send prompt to Bedrock AI'
@@ -46,6 +48,45 @@ export class ProxyController {
         }
       }
     };
+  }
+
+  @Get('providers')
+  @ApiOperation({ 
+    summary: 'Get all LLM providers and models', 
+    description: 'Returns a comprehensive list of all available AI providers and their models with pricing information' 
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Providers and models list returned successfully',
+    type: ProvidersResponseDto
+  })
+  async getProviders(): Promise<ProvidersResponseDto> {
+    try {
+      this.logger.log('🔍 Retrieving all available AI providers and models');
+      
+      const providers = this.bedrockService.getAvailableProviders();
+      const defaultConfig = this.bedrockService.getDefaultModelConfig();
+      const totalModels = providers.reduce((total, provider) => total + provider.models.length, 0);
+      
+      this.logger.log(`✅ Retrieved ${providers.length} providers with ${totalModels} total models`);
+      
+      return {
+        providers,
+        totalModels,
+        defaultModel: defaultConfig.modelId,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error(`❌ Failed to retrieve providers: ${error.message}`, error.stack);
+      throw new HttpException(
+        {
+          status: HttpStatus.INTERNAL_SERVER_ERROR,
+          error: 'Failed to retrieve providers',
+          message: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   @Post('prompt')
@@ -96,6 +137,7 @@ export class ProxyController {
       timestamp: new Date().toISOString(),
       endpoints: [
         'GET /api/proxy/health - This endpoint',
+        'GET /api/proxy/providers - Get all LLM providers and models',
         'POST /api/proxy/health - Health check',
         'POST /api/proxy/prompt - Send prompt to Bedrock'
       ]

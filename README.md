@@ -6,6 +6,7 @@ A proxy service built with NestJS and TypeScript that forwards user prompts to A
 
 - **Built with NestJS** - Enterprise-ready Node.js framework with TypeScript
 - **AWS Bedrock Integration** - Support for multiple AI models (Claude, Titan, etc.)
+- **Model Discovery** - GET endpoint to retrieve all available LLM providers and models with pricing
 - **Input Validation** - Comprehensive request validation with class-validator
 - **Security** - CORS enabled, input sanitization, error handling
 - **Comprehensive Logging** - Structured logging with configurable levels
@@ -111,6 +112,39 @@ Visit http://localhost:3000/api/docs for the complete Swagger/OpenAPI documentat
 - View example requests and responses
 
 ### API Endpoints
+
+#### Get All LLM Providers and Models
+
+```http
+GET /api/proxy/providers
+```
+
+**Response:**
+```json
+{
+  "providers": [
+    {
+      "name": "Anthropic",
+      "description": "Claude family of large language models",
+      "website": "https://www.anthropic.com",
+      "models": [
+        {
+          "id": "anthropic.claude-3-5-sonnet-20240620-v1:0",
+          "name": "Claude 3.5 Sonnet",
+          "description": "Most intelligent model with balanced performance for complex tasks",
+          "maxTokens": 200000,
+          "supportsStreaming": true,
+          "inputCostPer1K": 0.003,
+          "outputCostPer1K": 0.015
+        }
+      ]
+    }
+  ],
+  "totalModels": 21,
+  "defaultModel": "anthropic.claude-3-sonnet-20240229-v1:0",
+  "timestamp": "2025-09-12T20:09:18.273Z"
+}
+```
 
 #### Send Prompt to AI Model
 
@@ -322,6 +356,9 @@ npm run test:e2e
 ```bash
 # Health check
 curl -X GET http://localhost:3000/api/proxy/health
+
+# Get all available providers and models
+curl -X GET http://localhost:3000/api/proxy/providers
 
 # Send a prompt
 curl -X POST http://localhost:3000/api/proxy/prompt \
