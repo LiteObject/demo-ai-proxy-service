@@ -153,15 +153,15 @@ export class ProxyController {
   @HttpCode(200)
   @ApiOperation({ 
     summary: 'Analyze incident reports with expert safety feedback', 
-    description: 'Accepts workplace incident reports and provides expert safety analysis using predefined system prompts combined with AI processing' 
+    description: 'Accepts workplace incident reports and provides expert safety analysis using predefined system prompts and optimized AI model settings for safety analysis' 
   })
   @ApiBody({ 
     type: IncidentReportFeedbackDto, 
-    description: 'Incident report details for expert analysis' 
+    description: 'Incident report details for expert safety analysis' 
   })
   @ApiResponse({ 
     status: 200, 
-    description: 'Incident report analyzed successfully', 
+    description: 'Incident report analyzed successfully with expert safety feedback', 
     type: PromptResponseDto 
   })
   @ApiResponse({ status: 400, description: 'Invalid incident report data' })
@@ -172,14 +172,10 @@ export class ProxyController {
     try {
       this.logger.log(`🚨 [${requestId}] Processing incident report feedback request`);
       this.logger.debug(`📝 [${requestId}] Incident report length: ${body.incidentReport.length} characters`);
-      
-      if (body.modelId) {
-        this.logger.debug(`🤖 [${requestId}] Using specified model: ${body.modelId}`);
-      }
+      this.logger.debug(`🔧 [${requestId}] Using predefined safety analysis configuration`);
 
       const response: PromptResponse = await this.bedrockService.processIncidentReportFeedback(
-        body.incidentReport,
-        body.modelId
+        body.incidentReport
       );
 
       this.logger.log(`✅ [${requestId}] Incident report analysis completed successfully`);

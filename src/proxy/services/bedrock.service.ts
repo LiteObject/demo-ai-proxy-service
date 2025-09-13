@@ -424,10 +424,14 @@ export class BedrockService {
 
   /**
    * Process incident report with system prompt for expert safety analysis
+   * Uses predefined model configuration optimized for safety analysis
    */
-  async processIncidentReportFeedback(incidentReport: string, modelId?: string): Promise<PromptResponse> {
+  async processIncidentReportFeedback(incidentReport: string): Promise<PromptResponse> {
     const startTime = Date.now();
-    const selectedModelId = modelId || this.defaultModelId;
+    // Use predefined model settings optimized for safety analysis
+    const modelId = 'anthropic.claude-3-sonnet-20240229-v1:0'; // Best for analytical tasks
+    const maxTokens = 2000; // Sufficient for comprehensive safety analysis
+    const temperature = 0.3; // Lower temperature for more focused, analytical responses
 
     try {
       this.logger.log('📄 Processing incident report feedback request');
@@ -438,19 +442,20 @@ export class BedrockService {
       
       this.logger.debug(`📋 System prompt loaded from: ${systemPromptPath}`);
       this.logger.debug(`📝 Incident report length: ${incidentReport.length} characters`);
+      this.logger.debug(`🤖 Using predefined model: ${modelId} (temp: ${temperature}, maxTokens: ${maxTokens})`);
 
       // Combine system prompt with user incident report
       const combinedPrompt = `${systemPrompt}\n\n## Incident Report to Analyze:\n\n${incidentReport}`;
 
-      // Create a prompt request with the combined content
+      // Create a prompt request with the combined content and predefined settings
       const promptRequest: PromptRequestDto = {
         prompt: combinedPrompt,
-        modelId: selectedModelId,
-        maxTokens: this.defaultMaxTokens,
-        temperature: this.defaultTemperature
+        modelId: modelId,
+        maxTokens: maxTokens,
+        temperature: temperature
       };
 
-      this.logger.log(`🔍 Invoking expert analysis with model: ${selectedModelId}`);
+      this.logger.log(`🔍 Invoking expert analysis with optimized settings`);
       
       // Use the existing invokeModel method
       const response = await this.invokeModel(promptRequest);
@@ -465,7 +470,7 @@ export class BedrockService {
       this.logger.error(`❌ Error processing incident report feedback after ${duration}ms: ${error.message}`, error.stack);
       
       throw new BedrockInvocationException(
-        selectedModelId,
+        modelId,
         `Failed to process incident report feedback: ${error.message}`,
         { 
           duration, 
