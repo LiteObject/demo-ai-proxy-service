@@ -9,7 +9,8 @@ import {
   HttpCode,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
-import { BedrockService } from './services/bedrock.service';
+import { AIServiceFactory } from './services/ai-service.factory';
+import { AIServiceInterface } from './interfaces/ai-service.interface';
 import { PromptRequestDto } from './dto/prompt-request.dto';
 import { PromptResponse, PromptResponseDto } from './dto/prompt-response.dto';
 import { ProvidersResponseDto } from './dto/providers-response.dto';
@@ -22,8 +23,16 @@ import { HealthCheckResponseDto, DetailedHealthCheckResponseDto } from './dto/he
 @Controller('proxy')
 export class ProxyController {
   private readonly logger = new Logger(ProxyController.name);
+  private aiService: AIServiceInterface | null = null;
 
-  constructor(private readonly bedrockService: BedrockService) {}
+  constructor(private readonly aiServiceFactory: AIServiceFactory) {}
+
+  private async getAIService(): Promise<AIServiceInterface> {
+    if (!this.aiService) {
+      this.aiService = await this.aiServiceFactory.createService();
+    }
+    return this.aiService;
+  }
 
   @Get()
   @ApiOperation({ summary: 'Get API information', description: 'Returns basic information about the API and available endpoints' })
@@ -70,8 +79,9 @@ export class ProxyController {
     try {
       this.logger.log('🔍 Retrieving all available AI providers and models');
       
-      const providers = this.bedrockService.getAvailableProviders();
-      const defaultConfig = this.bedrockService.getDefaultModelConfig();
+      const aiService = await this.getAIService();
+      const providers = aiService.getAvailableProviders();
+      const defaultConfig = aiService.getDefaultModelConfig();
       const totalModels = providers.reduce((total, provider) => total + provider.models.length, 0);
       
       this.logger.log(`✅ Retrieved ${providers.length} providers with ${totalModels} total models`);
@@ -109,7 +119,8 @@ export class ProxyController {
       this.logger.log(`🚀 [${requestId}] Processing prompt request - Model: ${request.modelId || 'default'}`);
       this.logger.debug(`📝 [${requestId}] Prompt length: ${request.prompt.length} characters`);
       
-      const response = await this.bedrockService.invokeModel(request);
+      const aiService = await this.getAIService();
+      const response = await aiService.invokeModel(request);
       const duration = Date.now() - startTime;
       
       this.logger.log(`✅ [${requestId}] Prompt processed successfully in ${duration}ms - Response length: ${response.response.length} characters`);
@@ -174,7 +185,8 @@ export class ProxyController {
       this.logger.debug(`📝 [${requestId}] Incident report length: ${body.incidentReport.length} characters`);
       this.logger.debug(`🔧 [${requestId}] Using predefined safety analysis configuration`);
 
-      const response: PromptResponse = await this.bedrockService.processIncidentReportFeedback(
+      const aiService = await this.getAIService();
+      const response: PromptResponse = await aiService.processIncidentReportFeedback(
         body.incidentReport
       );
 

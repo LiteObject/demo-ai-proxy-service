@@ -6,7 +6,9 @@ A proxy service built with NestJS and TypeScript that forwards user prompts to A
 
 - **Built with NestJS** - Enterprise-ready Node.js framework with TypeScript
 - **AWS Bedrock Integration** - Support for multiple AI models (Claude, Titan, etc.)
+- **Specialized Safety Analysis** - Dedicated incident report feedback endpoint with expert safety analysis
 - **Model Discovery** - GET endpoint to retrieve all available LLM providers and models with pricing
+- **Dual-Mode Operation** - General prompting + specialized incident analysis with predefined configurations
 - **Input Validation** - Comprehensive request validation with class-validator
 - **Security** - CORS enabled, input sanitization, error handling
 - **Comprehensive Logging** - Structured logging with configurable levels
@@ -24,12 +26,19 @@ src/
 ├── common/                    # Shared services
 │   ├── logger.service.ts      # Custom logging service
 │   └── logging.interceptor.ts # HTTP request/response logging
+├── config/                    # Configuration files
+│   └── incident-report-system-prompt.md  # Expert safety analyst system prompt
 └── proxy/
     ├── proxy.module.ts        # Proxy feature module
     ├── proxy.controller.ts    # REST API endpoints
     ├── dto/                   # Data transfer objects
-    │   ├── prompt-request.dto.ts  # Request validation
-    │   └── prompt-response.dto.ts # Response interface
+    │   ├── prompt-request.dto.ts           # General prompt request validation
+    │   ├── prompt-response.dto.ts          # Response interface
+    │   ├── incident-report-feedback.dto.ts # Incident report validation
+    │   ├── providers-response.dto.ts       # Provider/model information
+    │   └── health-response.dto.ts          # Health check responses
+    ├── exceptions/            # Custom exception classes
+    │   └── bedrock.exceptions.ts           # Bedrock service exceptions
     └── services/
         └── bedrock.service.ts # AWS Bedrock integration
 ```
@@ -172,6 +181,74 @@ Content-Type: application/json
 }
 ```
 
+#### Incident Report Safety Analysis
+
+```http
+POST /api/proxy/incident-report-feedback
+Content-Type: application/json
+
+{
+  "incidentReport": "A worker slipped on a wet floor in the warehouse. The employee was carrying boxes when they fell and injured their wrist. The floor was wet due to a leaking pipe that had not been reported."
+}
+```
+
+**Response:**
+```json
+{
+  "response": "**INCIDENT ANALYSIS REPORT**\n\n**Risk Classification:** Medium-High Risk\n\n**Primary Hazards Identified:**\n1. Workplace slip/fall hazard due to wet surfaces\n2. Inadequate hazard reporting systems\n3. Poor housekeeping and maintenance protocols...",
+  "modelId": "anthropic.claude-3-sonnet-20240229-v1:0",
+  "usage": {
+    "inputTokens": 1847,
+    "outputTokens": 1523
+  }
+}
+```
+
+### Endpoint Comparison: `sendPrompt` vs `processIncidentReportFeedback`
+
+| Feature | **sendPrompt** | **processIncidentReportFeedback** |
+|---------|----------------|----------------------------------|
+| **Purpose** | General-purpose AI prompting | Specialized safety incident analysis |
+| **User Control** | Full parameter customization | Predefined safety-optimized settings |
+| **Model Selection** | User-configurable (`modelId` parameter) | Fixed: `anthropic.claude-3-sonnet-20240229-v1:0` |
+| **Temperature** | User-configurable (0.0-1.0) | Fixed: `0.3` (focused analytical responses) |
+| **Max Tokens** | User-configurable (up to 4096) | Fixed: `2000` (comprehensive safety analysis) |
+| **System Prompt** | None (direct user input) | Expert safety analyst persona automatically prepended |
+| **Input Validation** | Generic prompt validation | Specialized incident report validation (up to 50k chars) |
+| **Response Type** | General AI response | Structured safety analysis with risk assessment |
+| **Use Case** | Development, testing, general queries | Production safety management systems |
+| **Consistency** | Varies based on user parameters | Standardized expert-level analysis |
+
+#### When to Use Each Endpoint
+
+**Use `sendPrompt` for:**
+- 🔧 Development and testing
+- 🎛️ Custom AI applications requiring parameter control
+- 🔄 Experimental prompts with different models/settings
+- 📝 General-purpose AI interactions
+- 🔬 Research and experimentation
+
+**Use `processIncidentReportFeedback` for:**
+- 🏭 Production workplace safety systems
+- 📋 Standardized incident analysis
+- 🛡️ Compliance and regulatory reporting
+- 📊 Consistent safety assessment across organization
+- 🚨 Emergency response and risk management
+
+#### Technical Implementation Differences
+
+**`sendPrompt` Request Flow:**
+1. Validates user-provided parameters
+2. Sends prompt directly to specified Bedrock model
+3. Returns raw AI response
+
+**`processIncidentReportFeedback` Request Flow:**
+1. Validates incident report content (up to 50,000 characters)
+2. Loads expert safety analyst system prompt from `config/incident-report-system-prompt.md`
+3. Combines system prompt with incident report
+4. Sends to pre-optimized Bedrock model with safety-focused settings
+5. Returns structured expert safety analysis
+
 #### Health Check
 
 ```http
@@ -185,8 +262,10 @@ GET /api/proxy/health
   "timestamp": "2025-09-12T18:33:48.905Z",
   "endpoints": [
     "GET /api/proxy/health - This endpoint",
+    "GET /api/proxy/providers - Get all LLM providers and models",
     "POST /api/proxy/health - Health check",
-    "POST /api/proxy/prompt - Send prompt to Bedrock"
+    "POST /api/proxy/prompt - Send prompt to Bedrock",
+    "POST /api/proxy/incident-report-feedback - Analyze incident reports with expert safety feedback"
   ]
 }
 ```
@@ -360,8 +439,13 @@ curl -X GET http://localhost:3000/api/proxy/health
 # Get all available providers and models
 curl -X GET http://localhost:3000/api/proxy/providers
 
-# Send a prompt
+# Send a general prompt
 curl -X POST http://localhost:3000/api/proxy/prompt \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Hello, how are you?"}'
+
+# Analyze an incident report with expert safety feedback
+curl -X POST http://localhost:3000/api/proxy/incident-report-feedback \
+  -H "Content-Type: application/json" \
+  -d '{"incidentReport": "A worker slipped on a wet floor in the warehouse. The employee was carrying boxes when they fell and injured their wrist. The floor was wet due to a leaking pipe that had not been reported."}'
 ```

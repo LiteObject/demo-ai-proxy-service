@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   BedrockRuntimeClient,
@@ -8,31 +8,18 @@ import { PromptRequestDto } from '../dto/prompt-request.dto';
 import { PromptResponse } from '../dto/prompt-response.dto';
 import { ProviderInfo } from '../dto/providers-response.dto';
 import { BedrockInvocationException } from '../exceptions/bedrock.exceptions';
+import { BaseAIService } from './base-ai.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
 @Injectable()
-export class BedrockService {
-  private readonly logger = new Logger(BedrockService.name);
+export class BedrockService extends BaseAIService {
   private readonly bedrockClient: BedrockRuntimeClient;
-  private readonly defaultModelId: string;
-  private readonly defaultMaxTokens: number;
-  private readonly defaultTemperature: number;
 
-  constructor(private configService: ConfigService) {
-    const region = this.configService.get<string>('AWS_REGION', 'us-east-1');
-    this.defaultModelId = this.configService.get<string>(
-      'BEDROCK_MODEL_ID',
-      'anthropic.claude-3-sonnet-20240229-v1:0',
-    );
-    this.defaultMaxTokens = this.configService.get<number>(
-      'BEDROCK_MAX_TOKENS',
-      1000,
-    );
-    this.defaultTemperature = this.configService.get<number>(
-      'BEDROCK_TEMPERATURE',
-      0.7,
-    );
+  constructor(configService: ConfigService) {
+    super(configService);
+    
+    const region = this.config.region || 'us-east-1';
 
     const credentials: any = {
       accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID'),
@@ -54,12 +41,12 @@ export class BedrockService {
   }
 
   async invokeModel(request: PromptRequestDto): Promise<PromptResponse> {
-    const modelId = request.modelId || this.defaultModelId;
+    const modelId = request.modelId || this.getDefaultModelConfig().modelId;
     const startTime = Date.now();
 
     try {
       this.logger.log(`🤖 Invoking model: ${modelId}`);
-      this.logger.debug(`📋 Request parameters - MaxTokens: ${request.maxTokens || this.defaultMaxTokens}, Temperature: ${request.temperature || this.defaultTemperature}`);
+      this.logger.debug(`📋 Request parameters - MaxTokens: ${request.maxTokens || this.getDefaultModelConfig().maxTokens}, Temperature: ${request.temperature || this.getDefaultModelConfig().temperature}`);
 
       // Prepare the request body based on the model family
       const requestBody = this.prepareRequestBody(request, modelId);
@@ -109,8 +96,8 @@ export class BedrockService {
 
   private prepareRequestBody(request: PromptRequestDto, modelId: string): any {
     // Use environment defaults if not provided in request
-    const maxTokens = request.maxTokens || this.defaultMaxTokens;
-    const temperature = request.temperature || this.defaultTemperature;
+    const maxTokens = request.maxTokens || this.getDefaultModelConfig().maxTokens;
+    const temperature = request.temperature || this.getDefaultModelConfig().temperature;
 
     // Handle different model families
     if (modelId.includes('anthropic.claude')) {
@@ -486,10 +473,48 @@ export class BedrockService {
    * Get the default model configuration
    */
   getDefaultModelConfig() {
+    const defaultConfig = super.getDefaultModelConfig();
     return {
-      modelId: this.defaultModelId,
-      maxTokens: this.defaultMaxTokens,
-      temperature: this.defaultTemperature,
+      modelId: defaultConfig.modelId || 'anthropic.claude-3-sonnet-20240229-v1:0',
+      maxTokens: defaultConfig.maxTokens || 1000,
+      temperature: defaultConfig.temperature || 0.7,
     };
+  }
+
+  /**
+   * Get the provider name
+   */
+  getProviderName(): string {
+    return 'aws';
+  }
+
+  /**
+   * Health check for AWS Bedrock service
+   */
+  async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; details?: string }> {
+    try {
+      // Simple health check - try to invoke a basic request with minimal tokens
+      const testRequest: PromptRequestDto = {
+        prompt: 'Hello',
+        modelId: this.getDefaultModelConfig().modelId,
+        maxTokens: 10,
+        temperature: 0.1
+      };
+      
+      await this.invokeModel(testRequest);
+      return { status: 'healthy' };
+    } catch (error) {
+      return { 
+        status: 'unhealthy', 
+        details: `Bedrock service error: ${error.message}` 
+      };
+    }
+  }
+
+  /**
+   * Get the default model for AWS Bedrock provider
+   */
+  protected getDefaultModelForProvider(): string {
+    return 'anthropic.claude-3-sonnet-20240229-v1:0';
   }
 }

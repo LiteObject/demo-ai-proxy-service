@@ -1,0 +1,12 @@
+{
+  "claude-3-opus": "gemini-pro",
+  "claude-3-sonnet": "gemini-pro",
+  "claude-3-haiku": "gemini-pro",
+  "gpt-4": "gemini-pro",
+  "gpt-4-turbo": "gemini-pro", 
+  "gpt-3.5-turbo": "gemini-pro",
+  "llama-2-70b": "palm-2",
+  "llama-2-13b": "palm-2",
+  "command": "palm-2",
+  "text-embedding-ada-002": "textembedding-gecko"
+}
