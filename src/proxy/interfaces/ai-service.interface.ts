@@ -1,6 +1,7 @@
 import { PromptRequestDto } from '../dto/prompt-request.dto';
 import { PromptResponse } from '../dto/prompt-response.dto';
 import { ProviderInfo } from '../dto/providers-response.dto';
+import { ProviderName } from '../types/provider.types';
 
 export interface AIServiceInterface {
   /**
@@ -24,9 +25,9 @@ export interface AIServiceInterface {
   getDefaultModelConfig(): { modelId: string; maxTokens: number; temperature: number };
 
   /**
-   * Get the provider name
+   * Get the provider name - now strongly typed
    */
-  getProviderName(): string;
+  getProviderName(): ProviderName;
 
   /**
    * Health check for the AI service
@@ -75,3 +76,6 @@ export interface AIServiceCapabilities {
   embeddingGeneration: boolean;
   functionCalling: boolean;
 }
+
+// Re-export from types for backward compatibility
+export type { ProviderName } from '../types/provider.types';

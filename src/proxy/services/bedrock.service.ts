@@ -9,15 +9,22 @@ import { PromptResponse } from '../dto/prompt-response.dto';
 import { ProviderInfo } from '../dto/providers-response.dto';
 import { BedrockInvocationException } from '../exceptions/bedrock.exceptions';
 import { BaseAIService } from './base-ai.service';
-import * as fs from 'fs';
-import * as path from 'path';
+import { SystemPromptLoader } from './system-prompt-loader.service';
+import { RetryService } from '../../common/retry.service';
+import { EnhancedLoggerService } from '../../common/enhanced-logger.service';
+import { ProviderName } from '../types/provider.types';
 
 @Injectable()
 export class BedrockService extends BaseAIService {
   private readonly bedrockClient: BedrockRuntimeClient;
 
-  constructor(configService: ConfigService) {
-    super(configService);
+  constructor(
+    configService: ConfigService,
+    systemPromptLoader: SystemPromptLoader,
+    retryService?: RetryService,
+    enhancedLogger?: EnhancedLoggerService
+  ) {
+    super(configService, systemPromptLoader, retryService, enhancedLogger);
     
     const region = this.config.region || 'us-east-1';
 
@@ -410,66 +417,8 @@ export class BedrockService extends BaseAIService {
   }
 
   /**
-   * Process incident report with system prompt for expert safety analysis
-   * Uses predefined model configuration optimized for safety analysis
-   */
-  async processIncidentReportFeedback(incidentReport: string): Promise<PromptResponse> {
-    const startTime = Date.now();
-    // Use predefined model settings optimized for safety analysis
-    const modelId = 'anthropic.claude-3-sonnet-20240229-v1:0'; // Best for analytical tasks
-    const maxTokens = 2000; // Sufficient for comprehensive safety analysis
-    const temperature = 0.3; // Lower temperature for more focused, analytical responses
-
-    try {
-      this.logger.log('📄 Processing incident report feedback request');
-      
-      // Read system prompt from configuration file
-      const systemPromptPath = path.join(process.cwd(), 'config', 'incident-report-system-prompt.md');
-      const systemPrompt = fs.readFileSync(systemPromptPath, 'utf-8');
-      
-      this.logger.debug(`📋 System prompt loaded from: ${systemPromptPath}`);
-      this.logger.debug(`📝 Incident report length: ${incidentReport.length} characters`);
-      this.logger.debug(`🤖 Using predefined model: ${modelId} (temp: ${temperature}, maxTokens: ${maxTokens})`);
-
-      // Combine system prompt with user incident report
-      const combinedPrompt = `${systemPrompt}\n\n## Incident Report to Analyze:\n\n${incidentReport}`;
-
-      // Create a prompt request with the combined content and predefined settings
-      const promptRequest: PromptRequestDto = {
-        prompt: combinedPrompt,
-        modelId: modelId,
-        maxTokens: maxTokens,
-        temperature: temperature
-      };
-
-      this.logger.log(`🔍 Invoking expert analysis with optimized settings`);
-      
-      // Use the existing invokeModel method
-      const response = await this.invokeModel(promptRequest);
-      
-      const duration = Date.now() - startTime;
-      this.logger.log(`✅ Incident report analysis completed in ${duration}ms`);
-      
-      return response;
-      
-    } catch (error: any) {
-      const duration = Date.now() - startTime;
-      this.logger.error(`❌ Error processing incident report feedback after ${duration}ms: ${error.message}`, error.stack);
-      
-      throw new BedrockInvocationException(
-        modelId,
-        `Failed to process incident report feedback: ${error.message}`,
-        { 
-          duration, 
-          errorType: error.name,
-          statusCode: error.$metadata?.httpStatusCode || 500,
-          requestId: error.$metadata?.requestId 
-        }
-      );
-    }
-  }
-
-  /**
+   * Get the default model configuration
+   */  /**
    * Get the default model configuration
    */
   getDefaultModelConfig() {
@@ -484,7 +433,7 @@ export class BedrockService extends BaseAIService {
   /**
    * Get the provider name
    */
-  getProviderName(): string {
+  getProviderName(): ProviderName {
     return 'aws';
   }
 

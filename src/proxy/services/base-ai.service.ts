@@ -4,6 +4,10 @@ import { AIServiceInterface, AIServiceConfig } from '../interfaces/ai-service.in
 import { PromptRequestDto } from '../dto/prompt-request.dto';
 import { PromptResponse } from '../dto/prompt-response.dto';
 import { ProviderInfo } from '../dto/providers-response.dto';
+import { ProviderName } from '../types/provider.types';
+import { SystemPromptLoader } from './system-prompt-loader.service';
+import { RetryService, RetryConditions } from '../../common/retry.service';
+import { EnhancedLoggerService } from '../../common/enhanced-logger.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -12,59 +16,89 @@ export abstract class BaseAIService implements AIServiceInterface {
   protected readonly logger = new Logger(this.constructor.name);
   protected readonly config: AIServiceConfig;
 
-  constructor(protected configService: ConfigService) {
+  constructor(
+    protected configService: ConfigService,
+    protected systemPromptLoader: SystemPromptLoader,
+    protected retryService?: RetryService,
+    protected enhancedLogger?: EnhancedLoggerService
+  ) {
     this.config = this.loadProviderConfig();
   }
 
   // Abstract methods that must be implemented by concrete services
   abstract invokeModel(request: PromptRequestDto): Promise<PromptResponse>;
   abstract getAvailableProviders(): ProviderInfo[];
-  abstract getProviderName(): string;
+  abstract getProviderName(): ProviderName;
   abstract healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; details?: string }>;
 
   // Common implementation for incident report processing
   async processIncidentReportFeedback(incidentReport: string): Promise<PromptResponse> {
-    const startTime = Date.now();
+    const requestId = this.generateRequestId();
+    const performanceTracker = this.enhancedLogger?.startOperation('incident-report-analysis', {
+      requestId,
+      reportLength: incidentReport.length,
+      provider: this.getProviderName()
+    });
     
     try {
-      this.logger.log('📄 Processing incident report feedback request');
+      this.logger.log(`📄 [${requestId}] Processing incident report feedback request`);
       
-      // Read system prompt from configuration file
-      const systemPromptPath = path.join(process.cwd(), 'config', 'incident-report-system-prompt.md');
-      const systemPrompt = fs.readFileSync(systemPromptPath, 'utf-8');
+      // Load system prompt asynchronously with caching
+      const systemPrompt = await this.systemPromptLoader.getIncidentPrompt();
       
-      this.logger.debug(`📋 System prompt loaded from: ${systemPromptPath}`);
-      this.logger.debug(`📝 Incident report length: ${incidentReport.length} characters`);
+      this.logger.debug(`📋 [${requestId}] System prompt loaded`);
+      this.logger.debug(`📝 [${requestId}] Incident report length: ${incidentReport.length} characters`);
 
       // Combine system prompt with user incident report
       const combinedPrompt = `${systemPrompt}\n\n## Incident Report to Analyze:\n\n${incidentReport}`;
 
-      // Get default configuration optimized for safety analysis
-      const defaultConfig = this.getDefaultModelConfig();
+      // Get configuration optimized for safety analysis
+      const analysisConfig = this.getIncidentAnalysisConfig();
       
       // Create a prompt request with the combined content and predefined settings
       const promptRequest: PromptRequestDto = {
         prompt: combinedPrompt,
-        modelId: defaultConfig.modelId,
-        maxTokens: 2000, // Fixed for comprehensive safety analysis
-        temperature: 0.3  // Fixed for focused analytical responses
+        modelId: analysisConfig.modelId,
+        maxTokens: analysisConfig.maxTokens,
+        temperature: analysisConfig.temperature
       };
 
-      this.logger.log(`🔍 Invoking expert analysis with optimized settings for ${this.getProviderName()}`);
+      this.logger.log(`🔍 [${requestId}] Invoking expert analysis with optimized settings for ${this.getProviderName()}`);
+      this.logger.debug(`🔧 [${requestId}] Config: model=${analysisConfig.modelId}, temp=${analysisConfig.temperature}, maxTokens=${analysisConfig.maxTokens}`);
       
-      // Use the abstract invokeModel method
-      const response = await this.invokeModel(promptRequest);
+      // Use retry service if available, otherwise call directly
+      const response = await this.executeWithRetry(
+        () => this.invokeModel(promptRequest),
+        requestId
+      );
       
-      const duration = Date.now() - startTime;
-      this.logger.log(`✅ Incident report analysis completed in ${duration}ms`);
+      performanceTracker?.success({
+        modelId: analysisConfig.modelId,
+        responseLength: response.response.length
+      });
+      
+      this.logger.log(`✅ [${requestId}] Incident report analysis completed in ${performanceTracker?.getElapsedTime() || 'unknown'}ms`);
       
       return response;
       
     } catch (error: any) {
-      const duration = Date.now() - startTime;
-      this.logger.error(`❌ Error processing incident report feedback after ${duration}ms: ${error.message}`, error.stack);
+      performanceTracker?.failure(error, {
+        errorType: error.name,
+        errorMessage: error.message
+      });
+      
+      this.logger.error(`❌ [${requestId}] Error processing incident report feedback: ${error.message}`, error.stack);
       throw error;
     }
+  }
+
+  // Configuration method for incident analysis - can be overridden by providers
+  protected getIncidentAnalysisConfig(): { modelId: string; maxTokens: number; temperature: number } {
+    return {
+      modelId: this.configService.get<string>('INCIDENT_REPORT_MODEL_ID', this.getDefaultModelConfig().modelId),
+      maxTokens: this.configService.get<number>('INCIDENT_REPORT_MAX_TOKENS', 2000),
+      temperature: this.configService.get<number>('INCIDENT_REPORT_TEMPERATURE', 0.3)
+    };
   }
 
   // Common default model configuration
@@ -120,5 +154,41 @@ export abstract class BaseAIService implements AIServiceInterface {
 
   protected calculateProcessingTime(startTime: number): number {
     return Date.now() - startTime;
+  }
+
+  /**
+   * Execute operation with retry logic if retry service is available
+   */
+  protected async executeWithRetry<T>(
+    operation: () => Promise<T>, 
+    requestId: string
+  ): Promise<T> {
+    if (!this.retryService) {
+      // Fallback to direct execution if retry service not available
+      return await operation();
+    }
+
+    const result = await this.retryService.executeWithRetry(
+      operation,
+      RetryConditions.default,
+      {
+        maxRetries: this.configService.get<number>('bedrock.maxRetries', 3),
+        baseDelayMs: this.configService.get<number>('app.retryDelayMs', 1000),
+        maxDelayMs: 30000,
+        backoffMultiplier: this.configService.get<number>('app.retryBackoffMultiplier', 2),
+        jitterEnabled: true
+      }
+    );
+
+    if (!result.success) {
+      this.logger.error(`❌ [${requestId}] Operation failed after ${result.attempts} attempts: ${result.error?.message}`);
+      throw result.error;
+    }
+
+    if (result.attempts > 1) {
+      this.logger.log(`🔄 [${requestId}] Operation succeeded after ${result.attempts} attempts in ${result.totalElapsedMs}ms`);
+    }
+
+    return result.result!;
   }
 }
