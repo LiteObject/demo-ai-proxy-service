@@ -5,7 +5,7 @@ A vendor-agnostic AI proxy service built with NestJS and TypeScript. Features re
 ## Features
 
 ### Core Capabilities
-- **Vendor-Agnostic Architecture** - Abstract service pattern supports multiple AI providers (AWS, Azure, Google, OpenAI)
+- **Vendor-Agnostic Architecture** - Provider Abstraction Layer (Strategy + Factory + Adapter) supports multiple AI providers (AWS, Azure, Google, OpenAI)
 - **Enterprise-Grade Reliability** - Intelligent retry logic with exponential backoff and jitter
 - **Configuration Validation** - Comprehensive schema validation with class-validator decorators
 - **Structured Logging** - JSON-formatted logs with performance tracking and correlation IDs
@@ -532,8 +532,13 @@ INCIDENT_ANALYSIS_SYSTEM_PROMPT_PATH=config/incident-report-system-prompt.md
 
 ### Vendor Abstraction
 
-#### Abstract Service Pattern
-Clean abstraction layer for multiple AI providers:
+#### Provider Abstraction Layer (Strategy + Factory + Adapter)
+Clean multi-provider abstraction combining:
+- Strategy (runtime provider selection via unified interface)
+- Abstract Factory (centralized creation in `AIServiceFactory` with caching)
+- Adapter (each provider service normalizes its native SDK to the common contract)
+
+This layered approach keeps controllers and business flows decoupled from vendor SDK details while enabling safe extension.
 
 ```typescript
 export abstract class BaseAIService implements AIServiceInterface {
