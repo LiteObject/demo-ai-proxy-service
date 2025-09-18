@@ -57,6 +57,42 @@ graph TB
     Factory -.-> ConfigValidator
 ```
 
+### Adapter Pattern in Practice
+
+This codebase intentionally implements the Adapter Pattern (combined with Strategy + Abstract Factory) to provide a **uniform AI invocation interface** while isolating vendor-specific SDK details. Although classes are named `*Service` to align with NestJS conventions and domain language, each concrete provider service is an **adapter** that translates between:
+
+| Pattern Role | Implementation |
+|--------------|---------------|
+| Target Interface | `AIServiceInterface` + abstract base `BaseAIService` |
+| Adapters | `BedrockService` (and future `AzureOpenAIService`, `GoogleVertexAIService`, `OpenAIService`, `OllamaService`) |
+| Adaptees | External provider SDKs / HTTP APIs (AWS Bedrock, Azure OpenAI, etc.) |
+| Client | `ProxyController` (and any other application layer components) |
+| Factory / Creator | `AIServiceFactory` (selects + caches appropriate adapter) |
+
+#### How Adaptation Works
+1. Controller receives a normalized request DTO (`PromptRequestDto`).
+2. `AIServiceFactory` returns the appropriate provider service (adapter) based on configuration or request metadata.
+3. The adapter maps the unified request into provider-specific SDK parameters (e.g., model IDs, token/temperature keys, safety settings).
+4. Provider response (which may vary widely in shape) is transformed back into a standardized `PromptResponse` structure with consistent `usage`, `modelId`, and metadata.
+5. Cross-cutting concerns (retry, logging, incident analysis prompt composition) are applied uniformly in `BaseAIService`.
+
+#### Why Not Append "Adapter" to Class Names?
+- Follows NestJS ecosystem convention (`SomethingService`) for readability and DI familiarity.
+- Maintains domain-centric language ("Bedrock Service" vs. "Bedrock Adapter").
+- Avoids redundancy: architectural intent is documented in [DESIGN-PATTERNS.md](docs/DESIGN-PATTERNS.md) and [SERVICE-ARCHITECTURE.md](docs/SERVICE-ARCHITECTURE.md).
+- Leaves room for provider-specific enhancements beyond pure adaptation (e.g., pre-processing, safety tuning, cost controls).
+
+#### Extending with a New Provider (High-Level)
+1. Create `NewProviderService extends BaseAIService`.
+2. Implement abstract methods: `invokeModel`, `getProviderName`, `healthCheck`, optional overrides.
+3. Add provider definition in `provider.types.ts` (`PROVIDER_DEFINITIONS`).
+4. Register instantiation branch in `AIServiceFactory`.
+5. Add model mapping file under `config/` if needed.
+6. Document usage and (optionally) add tests for translation logic.
+
+> The combination of Strategy (runtime selection), Adapter (request/response translation), and Abstract Factory (centralized creation) yields a pluggable, testable, and vendor-neutral architecture.
+
+
 ## Repository Structure
 
 ```
@@ -983,3 +1019,18 @@ export class AdvancedRateLimitService {
 - **CORS Configuration**: Cross-origin request handling
 - **Error Sanitization**: Sensitive data exclusion in error responses
 - **Request ID Tracking**: Audit trail for all operations
+
+## Documentation
+
+### Architecture & Design
+- **[Design Patterns](docs/DESIGN-PATTERNS.md)** - Adapter, Strategy, and Factory patterns overview
+- **[Service Architecture](docs/SERVICE-ARCHITECTURE.md)** - Detailed implementation guide for interfaces and services
+- **[Implementation Guide](docs/IMPLEMENTATION-GUIDE.md)** - Step-by-step instructions for adding providers and features
+
+### Development & Testing
+- **[Testing Strategy](docs/TESTING-STRATEGY.md)** - Comprehensive testing approaches for AI services
+- **[API Reference](docs/API-REFERENCE.md)** - Complete endpoint documentation and usage examples
+- **[Guardrails Implementation Plan](docs/GUARDRAILS-IMPLEMENTATION-PLAN.md)** - Content safety and compliance features
+
+### Historical Reference
+- **[Archives](docs/archives/)** - Original documentation files for reference
